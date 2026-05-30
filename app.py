@@ -275,37 +275,98 @@ sort_map = {"Flight Risk (high first)":"FlightRisk","Promotion Readiness":"Promo
             "Name":"JobRole","Job Level":"JobLevel"}
 filt = filt.sort_values(sort_map[sort_by], ascending=(sort_by=="Name"))
 
-st.markdown(f'<p style="font-family:\'Space Mono\';font-size:11px;color:#7e8ca6;margin-bottom:12px">'
-            f'Showing {len(filt)} of {len(results)} employees</p>', unsafe_allow_html=True)
+# ── View mode toggle ──────────────────────────────────────────────────────────
+if "show_all" not in st.session_state:
+    st.session_state.show_all = False
 
-# ── Layout: roster + detail ─────────────────────────────────────────────────────
+# Build the display set based on view mode
+sorted_by_risk = filt.sort_values("FlightRisk", ascending=False)
+top10    = sorted_by_risk.head(10)
+bottom10 = sorted_by_risk.tail(10).sort_values("FlightRisk")  # safest first
+
+if st.session_state.show_all or search or dept_filter != "All" or risk_filter != "All":
+    display_df   = filt
+    view_label   = f"Showing all {len(filt)} employees"
+    is_split_view = False
+else:
+    display_df   = None   # handled separately in split view
+    view_label   = f"Showing Top 10 (highest risk) and Bottom 10 (lowest risk) of {len(results)} employees"
+    is_split_view = True
+
+col_info, col_btn = st.columns([3,1])
+with col_info:
+    st.markdown(f'<p style="font-family:\'Space Mono\';font-size:11px;color:#7e8ca6;margin-bottom:8px">'
+                f'{view_label}</p>', unsafe_allow_html=True)
+with col_btn:
+    if not (search or dept_filter != "All" or risk_filter != "All"):
+        if st.session_state.show_all:
+            if st.button("Show Top & Bottom 10", use_container_width=True):
+                st.session_state.show_all = False
+                st.rerun()
+        else:
+            if st.button("Show All 1,470 Employees", use_container_width=True):
+                st.session_state.show_all = True
+                st.rerun()
+
+# ── Layout: roster + detail ───────────────────────────────────────────────────
 roster_col, detail_col = st.columns([3,2])
 
 # Session state for selected employee
 if "selected_idx" not in st.session_state:
-    st.session_state.selected_idx = filt.index[0] if len(filt)>0 else None
+    first = top10.index[0] if is_split_view else filt.index[0] if len(filt)>0 else None
+    st.session_state.selected_idx = first
+
+def render_tile_row(df_slice, cols_grid):
+    """Render one row of employee tiles."""
+    for col_ui, (idx, emp) in zip(cols_grid, df_slice.iterrows()):
+        fr = emp["FlightRisk"]; pr = emp["PromoReadiness"]
+        lvl_name = level_label(emp["JobLevel"])
+        with col_ui:
+            if st.button(
+                f"{emp['JobRole'][:18]}\n{emp['Department'][:14]}\nRisk: {fr:.0f}%  LV{int(emp['JobLevel'])}",
+                key=f"btn_{idx}", use_container_width=True
+            ):
+                st.session_state.selected_idx = idx
+            st.markdown(
+                f'<div class="mini-bar-wrap">'
+                f'{bar_html(fr, risk_color(fr))}'
+                f'<div class="mini-label"><span>RISK</span>'
+                f'<span style="color:{risk_color(fr)}">{fr:.0f}%</span></div>'
+                f'</div>', unsafe_allow_html=True)
 
 with roster_col:
-    # Render roster in a 4-column grid
-    rows = [filt.iloc[i:i+4] for i in range(0,len(filt),4)]
-    for row_df in rows:
-        cols_grid = st.columns(4)
-        for col_ui, (idx, emp) in zip(cols_grid, row_df.iterrows()):
-            fr = emp["FlightRisk"]; pr = emp["PromoReadiness"]
-            if fr>=55:   tag,cls = "AT RISK","tag-risk"
-            elif pr>=70 and fr<35: tag,cls = "RISING STAR","tag-star"
-            else:        tag,cls = "STABLE","tag-ok"
-            card_cls = "danger" if fr>=55 else "star" if (pr>=70 and fr<35) else ""
-            lvl_name = level_label(emp["JobLevel"])
-            with col_ui:
-                if st.button(f"{emp['JobRole'][:18]}\n{emp['Department'][:14]}\nRisk: {fr:.0f}%  LV{int(emp['JobLevel'])}",
-                             key=f"btn_{idx}", use_container_width=True):
-                    st.session_state.selected_idx = idx
-                st.markdown(
-                    f'<div class="mini-bar-wrap">'
-                    f'{bar_html(fr, risk_color(fr))}'
-                    f'<div class="mini-label"><span>RISK</span><span style="color:{risk_color(fr)}">{fr:.0f}%</span></div>'
-                    f'</div>', unsafe_allow_html=True)
+    if is_split_view:
+        # TOP 10 section
+        st.markdown("""
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <span style="background:#3a1620;color:#ff5267;font-family:'Space Mono';font-size:10px;
+          font-weight:700;padding:3px 10px;border-radius:5px;letter-spacing:1px">TOP 10 AT RISK</span>
+          <span style="font-family:'Space Mono';font-size:10px;color:#7e8ca6">Highest predicted flight risk — act on these first</span>
+        </div>""", unsafe_allow_html=True)
+        rows_top = [top10.iloc[i:i+4] for i in range(0, len(top10), 4)]
+        for row_df in rows_top:
+            cols_grid = st.columns(4)
+            render_tile_row(row_df, cols_grid)
+
+        st.markdown('<div style="height:16px"></div>', unsafe_allow_html=True)
+
+        # BOTTOM 10 section
+        st.markdown("""
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <span style="background:#13301f;color:#37d67a;font-family:'Space Mono';font-size:10px;
+          font-weight:700;padding:3px 10px;border-radius:5px;letter-spacing:1px">BOTTOM 10 STABLE</span>
+          <span style="font-family:'Space Mono';font-size:10px;color:#7e8ca6">Lowest predicted flight risk — your most secure employees</span>
+        </div>""", unsafe_allow_html=True)
+        rows_bot = [bottom10.iloc[i:i+4] for i in range(0, len(bottom10), 4)]
+        for row_df in rows_bot:
+            cols_grid = st.columns(4)
+            render_tile_row(row_df, cols_grid)
+    else:
+        # Full list view
+        rows = [display_df.iloc[i:i+4] for i in range(0, len(display_df), 4)]
+        for row_df in rows:
+            cols_grid = st.columns(4)
+            render_tile_row(row_df, cols_grid)
 
 with detail_col:
     sel_idx = st.session_state.selected_idx
