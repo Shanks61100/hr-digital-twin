@@ -1,8 +1,6 @@
-# hr-digital-twin
+# HR Digital Twin: Gamifying Workforce Strategy
 
 https://hr-digital-twin-de6ppkvxau3uvyzwzsb6oc.streamlit.app/
-
-# HR Digital Twin: Gamifying Workforce Strategy
 
 Welcome to the HR Digital Twin project! This repository contains the code and methodology for my Master's thesis, which reimagines Human Resources analytics. 
 
